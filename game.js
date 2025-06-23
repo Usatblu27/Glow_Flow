@@ -1,4 +1,3 @@
-// Инициализация Matter.js
 const Engine = Matter.Engine,
   Render = Matter.Render,
   World = Matter.World,
@@ -8,21 +7,20 @@ const Engine = Matter.Engine,
   Composite = Matter.Composite,
   Query = Matter.Query;
 
-// Создание движка
 const engine = Engine.create({
-  positionIterations: 20,
-  velocityIterations: 20,
+  positionIterations: 50,
+  velocityIterations: 50,
   constraintIterations: 20,
 });
 engine.gravity.y = 0.3;
 
 const pieceMaterial = {
   friction: 0.3,
-  restitution: 0.1,
-  frictionStatic: 0.1,
-  frictionAir: 0.02,
-  slop: 0.05,
+  restitution: 0.2, // Увеличим отскок
+  frictionStatic: 0.5, // Больше статического трения
+  slop: 0.1, // Уменьшим "проседание"
   chamfer: { radius: 5 },
+  stiffness: 0.9, // Жесткость соединений (если есть composite)
 };
 
 // Получаем элементы DOM
@@ -30,28 +28,22 @@ const gameWrapper = document.getElementById("game-wrapper");
 const gameContainer = document.getElementById("game-container");
 const gameOverDisplay = document.getElementById("game-over");
 const restartBtn = document.getElementById("restart-btn");
-const pauseBtn = document.getElementById("pause-btn");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsPanel = document.getElementById("settings-panel");
 const closeSettings = document.querySelector(".close-settings");
 const musicToggle = document.getElementById("music-toggle");
 const soundEffects = document.getElementById("sound-effects");
-const colorsCount = document.getElementById("colors-count");
-const pieceSize = document.getElementById("piece-size");
 const bgMusic = document.getElementById("bg-music");
 const collisionSound = document.getElementById("collision-sound");
 const explosionSound = document.getElementById("explosion-sound");
 
-// Настройка громкости звуков
-bgMusic.volume = 0.02;
+bgMusic.volume = 0.2;
 collisionSound.volume = 0.2;
 explosionSound.volume = 0.3;
 
-// Размеры игрового поля
 const gameWidth = gameWrapper.clientWidth;
 const gameHeight = gameWrapper.clientHeight;
 
-// Настройка рендерера
 const render = Render.create({
   element: gameContainer,
   engine: engine,
@@ -60,48 +52,47 @@ const render = Render.create({
     height: gameHeight,
     wireframes: false,
     background: "#19153A",
-    showAngleIndicator: false,
-    showCollisions: false,
-    showVelocity: false,
-    // Добавьте эти настройки:
-    pixelRatio: window.devicePixelRatio || 1,
-    enableSleeping: true,
-    styles: {
-      // Глобальные стили для всех фигур
-      body: {
-        strokeStyle: "#FFFFFF",
-        lineWidth: 1,
-        fillStyle: "transparent",
-        glow: {
-          color: "#FFFFFF",
-          blur: 15,
-        },
-      },
-    },
+    showSleeping: true,
+    wireframeBackground: "#19153A",
+    showStats: false,
+    showPerformance: false,
   },
 });
 
-// Пост-обработка для усиления неона
-Events.on(render, "afterRender", function () {
-  var ctx = render.context;
-  ctx.globalCompositeOperation = "lighter";
-  ctx.shadowColor = "rgba(255,255,255,0.8)";
-  ctx.shadowBlur = 15;
-});
+function createSimpleStyle(color) {
+  return {
+    fillStyle: color,
+    strokeStyle: color,
+    lineWidth: 1,
+  };
+}
 
-// Игровые переменные
 const pieces = [];
 const allColors = [
-  "#ED1C24",
-  "#22B14C",
-  "#3F48CC",
-  "#FFF200",
-  "#FF7F27",
-  "#B5E61D",
-  "#FF00FF",
-  "#00FFFF",
-  "#9900FF",
-  "#00FF99",
+  "#FF0000", // Красный
+  "#008000", // Зеленый
+  "#0000FF", // Синий
+  "#FFFF00", // Желтый
+
+  "#FF00FF", // Розовый
+  "#00FF00", // Лаймовый
+  "#00FFFF", // Голубой
+  "#FF8000", // Оранжевый
+
+  "#FDAFFF", // Фуксия
+  "#A6FFAA", // Мятный
+  "#00FFFF", // Саян
+  "#00FF80", // Изумрудный
+
+  "#800000", // Марун
+  "#800080", // Фиолетовый
+  "#006400", // Темно зеленый
+  "#FF4500", // Темно оранжевый
+
+  "FFC0CB", // Светло розовый
+  "#E6E6FA", // Лавандовый
+  "C0C0C0", // Серый
+  "FFFFFF", // Белый
 ];
 const shapes = [
   "circle",
@@ -112,42 +103,182 @@ const shapes = [
   "hexagon",
   "trapezoid",
   "rhombus",
+  "oval",
 ];
 let colors = [];
 let score = 0;
 let displayedScore = 0;
 let gameActive = true;
-let gamePaused = false;
-let touchStartX = 0;
-let touchStartY = 0;
 let currentPiece = null;
 let canSpawnNewPiece = true;
 let scoreAnimationFrame;
 let pieceInterval;
 let checkLinesInterval;
-let baseArea = 3500; // Базовый размер фигур
-let pausedVelocities = new WeakMap();
+let baseArea = 1500;
+let unlockedColors = 4;
+let isCheckingLines = false;
 
 // Инициализация цветов
 function initColors() {
-  const count = parseInt(colorsCount.value);
-  colors = allColors.slice(0, count);
+  colors = allColors.slice(0, unlockedColors);
 }
 
-// Инициализация размера фигур
-function initPieceSize() {
-  const size = pieceSize.value;
-  if (size === "small") {
-    baseArea = 2500;
-  } else if (size === "medium") {
-    baseArea = 3500;
-  } else if (size === "large") {
-    baseArea = 4500;
-  } else if (size === "xlarge") {
-    baseArea = 6000;
+function checkFieldOverflow() {
+  if (!gameActive || isCheckingLines) return false;
+
+  // 1. Считаем заполненность поля (0.0 - 1.0)
+  const totalArea = gameWidth * gameHeight;
+  let occupiedArea = 0;
+  const staticPieces = pieces.filter((piece) => piece !== currentPiece);
+
+  staticPieces.forEach((piece) => {
+    if (piece.bounds) {
+      const width = piece.bounds.max.x - piece.bounds.min.x;
+      const height = piece.bounds.max.y - piece.bounds.min.y;
+      occupiedArea += width * height;
+    }
+  });
+
+  const fillRatio = occupiedArea / totalArea;
+  if (fillRatio < 0.5) return false; // Меньше 50% — не удаляем
+
+  // 2. Берем нижние 40% фигур
+  const sortedPieces = [...staticPieces].sort(
+    (a, b) => b.position.y - a.position.y
+  );
+  const bottomPieces = sortedPieces.slice(
+    0,
+    Math.floor(sortedPieces.length * 0.4)
+  );
+  if (bottomPieces.length < 3) return false;
+
+  // 3. Адаптивное расстояние: от 50px (при 50%) до 250px (при 90%+)
+  const minDistance = 50;
+  const maxDistance = 250;
+  const adaptiveDistance =
+    minDistance +
+    (maxDistance - minDistance) * Math.max(0, (fillRatio - 0.5) / 0.4);
+
+  // 4. Удаляем фигуры, у которых есть хотя бы 1 сосед в пределах adaptiveDistance
+  const piecesToRemove = new Set();
+  for (let i = 0; i < bottomPieces.length; i++) {
+    for (let j = i + 1; j < bottomPieces.length; j++) {
+      const dist = getDistance(bottomPieces[i], bottomPieces[j]);
+      if (dist <= adaptiveDistance) {
+        piecesToRemove.add(bottomPieces[i]);
+        piecesToRemove.add(bottomPieces[j]);
+      }
+    }
+  }
+
+  if (piecesToRemove.size === 0) return false;
+
+  // 5. Удаляем с эффектами
+  removePiecesWithEffect(Array.from(piecesToRemove));
+
+  // 6. Визуалы и очки
+  const centerX = gameWidth / 2;
+  const centerY = gameHeight * 0.7;
+  const clearScore = Math.floor(100 * piecesToRemove.size * fillRatio); // Больше очков при заполненности
+  addScore(clearScore, "#FF5555", centerX, centerY);
+
+  if (soundEffects.value === "on") {
+    explosionSound.currentTime = 0;
+    explosionSound.play();
+  }
+  createExplosion(centerX, centerY, "#FF5555");
+
+  return true;
+}
+
+// Ищет группы фигур, находящихся не дальше `maxDistance` друг от друга
+function findClusters(piecesArray, maxDistance) {
+  const clusters = [];
+  const processed = new Set();
+
+  for (const piece of piecesArray) {
+    if (processed.has(piece)) continue;
+
+    const cluster = [];
+    const queue = [piece];
+    processed.add(piece);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      cluster.push(current);
+
+      // Ищем соседей в пределах `maxDistance`
+      for (const other of piecesArray) {
+        if (processed.has(other)) continue;
+        const dist = getDistance(current, other);
+        if (dist <= maxDistance) {
+          processed.add(other);
+          queue.push(other);
+        }
+      }
+    }
+
+    if (cluster.length > 0) clusters.push(cluster);
+  }
+
+  return clusters;
+}
+
+// Проверка и разблокировка новых цветов
+function checkColorUnlocks() {
+  if (score >= 300 && unlockedColors < 4) {
+    unlockedColors = 4;
+    initColors();
+  } else if (score >= 600 && unlockedColors < 5) {
+    unlockedColors = 5;
+    initColors();
+  } else if (score >= 1000 && unlockedColors < 6) {
+    unlockedColors = 6;
+    initColors();
+  } else if (score >= 1500 && unlockedColors < 7) {
+    unlockedColors = 7;
+    initColors();
+  } else if (score >= 2100 && unlockedColors < 8) {
+    unlockedColors = 8;
+    initColors();
+  } else if (score >= 2800 && unlockedColors < 9) {
+    unlockedColors = 9;
+    initColors();
+  } else if (score >= 3600 && unlockedColors < 10) {
+    unlockedColors = 10;
+    initColors();
+  } else if (score >= 4500 && unlockedColors < 11) {
+    unlockedColors = 11;
+    initColors();
+  } else if (score >= 5500 && unlockedColors < 12) {
+    unlockedColors = 12;
+    initColors();
+  } else if (score >= 6600 && unlockedColors < 13) {
+    unlockedColors = 13;
+    initColors();
+  } else if (score >= 7800 && unlockedColors < 14) {
+    unlockedColors = 14;
+    initColors();
+  } else if (score >= 9100 && unlockedColors < 15) {
+    unlockedColors = 15;
+    initColors();
+  } else if (score >= 10500 && unlockedColors < 16) {
+    unlockedColors = 16;
+    initColors();
+  } else if (score >= 12000 && unlockedColors < 17) {
+    unlockedColors = 17;
+    initColors();
+  } else if (score >= 13600 && unlockedColors < 18) {
+    unlockedColors = 18;
+    initColors();
+  } else if (score >= 15300 && unlockedColors < 19) {
+    unlockedColors = 19;
+    initColors();
+  } else if (score >= 17100 && unlockedColors < 20) {
+    unlockedColors = 20;
+    initColors();
   }
 }
-
 // Создание границ
 const ground = Bodies.rectangle(
   gameWidth / 2,
@@ -194,30 +325,6 @@ const gameOverLine = Bodies.rectangle(
 
 World.add(engine.world, [ground, leftWall, rightWall, gameOverLine]);
 
-// Функция для создания неонового эффекта
-function createNeonStyle(color) {
-  return {
-    fillStyle: color,
-    strokeStyle: color,
-    lineWidth: 4, // Толщина обводки
-    shadowColor: color,
-    shadowBlur: 20, // Размер свечения
-    shadowOffset: { x: 0, y: 0 },
-    // Дополнительные эффекты для неона
-    glow: {
-      color: color,
-      blur: 30,
-      offsetX: 0,
-      offsetY: 0,
-    },
-    // Настройки для разных типов фигур
-    wireframes: false,
-    fill: true,
-    stroke: true,
-  };
-}
-
-// Анимация счета (медленное накручивание)
 function animateScore() {
   if (Math.abs(displayedScore - score) < 1) {
     displayedScore = score;
@@ -229,6 +336,7 @@ function animateScore() {
   document.getElementById("score").textContent = `SCORE: ${Math.floor(
     displayedScore
   )}`;
+  checkColorUnlocks();
 }
 
 // Создание эффекта взрыва
@@ -262,7 +370,7 @@ function createScorePopup(x, y, points, color) {
 
 // Создание фигур с одинаковой площадью
 function createPiece() {
-  if (!gameActive || !canSpawnNewPiece || gamePaused) return;
+  if (!gameActive || !canSpawnNewPiece || isCheckingLines) return;
 
   canSpawnNewPiece = false;
   const x = gameWidth / 2;
@@ -277,44 +385,50 @@ function createPiece() {
     const radius = Math.sqrt(targetArea / Math.PI);
     piece = Bodies.circle(x, 50, radius, {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
     });
   } else if (shape === "square") {
     const side = Math.sqrt(targetArea);
     piece = Bodies.rectangle(x, 50, side, side, {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
       chamfer: { radius: 5 },
+      sleepThreshold: 10,
     });
   } else if (shape === "rectangle") {
     const width = Math.sqrt(targetArea) * 2;
     const height = targetArea / width;
     piece = Bodies.rectangle(x, 50, width, height, {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
       chamfer: { radius: 5 },
+      sleepThreshold: 10,
     });
   } else if (shape === "triangle") {
     const side = Math.sqrt((4 * targetArea * 0.8) / Math.sqrt(3));
     piece = Bodies.polygon(x, 50, 3, side / (2 * Math.sin(Math.PI / 3)), {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
     });
   } else if (shape === "pentagon") {
     const side = Math.sqrt((4 * targetArea * Math.tan(Math.PI / 5)) / 5);
     piece = Bodies.polygon(x, 50, 5, side / (2 * Math.sin(Math.PI / 5)), {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
     });
   } else if (shape === "hexagon") {
     const side = Math.sqrt((2 * targetArea) / (3 * Math.sqrt(3)));
     piece = Bodies.polygon(x, 50, 6, side, {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
     });
   } else if (shape === "trapezoid") {
-    const width = Math.sqrt(targetArea * 1.2);
-    const height = targetArea / width;
+    const width = Math.sqrt(targetArea * 1.5);
+    const height = (targetArea / width) * 1.2;
     const vertices = [
       { x: -width / 2, y: -height / 2 },
       { x: width / 2, y: -height / 2 },
@@ -323,11 +437,12 @@ function createPiece() {
     ];
     piece = Bodies.fromVertices(x, 50, [vertices], {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
     });
   } else if (shape === "rhombus") {
-    const width = Math.sqrt(targetArea * 3);
-    const height = targetArea / width;
+    const width = Math.sqrt(targetArea * 3.5);
+    const height = (targetArea / width) * 2;
     const vertices = [
       { x: 0, y: -height / 2 },
       { x: width / 2, y: 0 },
@@ -336,7 +451,24 @@ function createPiece() {
     ];
     piece = Bodies.fromVertices(x, 50, [vertices], {
       ...pieceMaterial,
-      render: createNeonStyle(color),
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
+    });
+  } else if (shape === "oval") {
+    const width = Math.sqrt(targetArea * 3);
+    const height = (targetArea / width) * 1.2;
+    const vertices = [];
+    for (let i = 0; i < 20; i++) {
+      const angle = (i / 20) * Math.PI * 2;
+      vertices.push({
+        x: (width / 2) * Math.cos(angle),
+        y: (height / 2) * Math.sin(angle),
+      });
+    }
+    piece = Bodies.fromVertices(x, 50, [vertices], {
+      ...pieceMaterial,
+      render: createSimpleStyle(color),
+      sleepThreshold: 10,
     });
   }
 
@@ -347,30 +479,29 @@ function createPiece() {
   World.add(engine.world, piece);
   pieces.push(piece);
   currentPiece = piece;
-
-  // Добавляем очки за размещение фигуры
-  const placementScore = Math.floor(3 + Math.random() * 5);
-  addScore(placementScore, color, x, 50);
 }
 
 // Добавление очков с анимацией
 function addScore(points, color, x, y) {
+  if (points <= 0) return;
+  if (points > 1000) points = 1000;
+
   score += points;
   createScorePopup(x, y, points, color);
   animateScore();
 }
 
-// Проверка заполненных линий
-
-// Проверка заполненных линий
 function checkLines() {
-  if (!gameActive) return;
+  if (!gameActive || isCheckingLines) return;
 
-  // Группируем фигуры по цветам
+  isCheckingLines = true;
+
+  // Группируем фигуры по цветам (исключая текущую фигуру игрока)
   const colorGroups = {};
-
+  const piecesToCheck = pieces.filter((piece) => piece !== currentPiece);
+  const wasCleared = checkFieldOverflow(); // Проверка переполнения
   // Собираем все фигуры одного цвета
-  pieces.forEach((piece) => {
+  piecesToCheck.forEach((piece) => {
     if (!colorGroups[piece.color]) {
       colorGroups[piece.color] = [];
     }
@@ -381,35 +512,41 @@ function checkLines() {
   for (const color in colorGroups) {
     const piecesOfColor = colorGroups[color];
     const clusters = [];
+    const processedPieces = new Set();
 
-    // Находим кластеры близких фигур
+    // Находим кластеры близких фигур с помощью BFS
     for (let i = 0; i < piecesOfColor.length; i++) {
       const piece = piecesOfColor[i];
-      let addedToCluster = false;
 
-      // Проверяем все существующие кластеры
-      for (let j = 0; j < clusters.length; j++) {
-        const cluster = clusters[j];
+      // Если фигура уже в кластере - пропускаем
+      if (processedPieces.has(piece)) continue;
 
-        // Проверяем расстояние до каждой фигуры в кластере
-        for (let k = 0; k < cluster.length; k++) {
-          const clusterPiece = cluster[k];
-          const distance = getDistance(piece, clusterPiece);
+      // Создаем новый кластер
+      const cluster = [];
+      const queue = [piece];
+      processedPieces.add(piece);
 
-          // Если расстояние меньше порогового - добавляем в кластер
-          if (distance < 50) {
-            // Уменьшили пороговое расстояние
-            cluster.push(piece);
-            addedToCluster = true;
-            break;
+      while (queue.length > 0) {
+        const currentPiece = queue.shift();
+        cluster.push(currentPiece);
+
+        // Ищем соседей для текущей фигуры
+        for (let j = 0; j < piecesOfColor.length; j++) {
+          const neighborPiece = piecesOfColor[j];
+
+          // Если соседняя фигура еще не обработана и достаточно близко
+          if (
+            !processedPieces.has(neighborPiece) &&
+            arePiecesConnected(currentPiece, neighborPiece)
+          ) {
+            processedPieces.add(neighborPiece);
+            queue.push(neighborPiece);
           }
         }
-        if (addedToCluster) break;
       }
 
-      // Если не добавили ни в один кластер - создаем новый
-      if (!addedToCluster) {
-        clusters.push([piece]);
+      if (cluster.length > 0) {
+        clusters.push(cluster);
       }
     }
 
@@ -419,72 +556,99 @@ function checkLines() {
 
       // Если в кластере 5 и более фигур - удаляем
       if (cluster.length >= 5) {
-        cluster.forEach((piece) => {
-          World.remove(engine.world, piece);
-          const index = pieces.indexOf(piece);
-          if (index > -1) pieces.splice(index, 1);
-        });
-
-        if (soundEffects.value === "on") {
-          explosionSound.currentTime = 0;
-          explosionSound.play();
+        // Проверяем, не входит ли текущая фигура игрока в кластер
+        let playerPieceInCluster = false;
+        if (currentPiece) {
+          playerPieceInCluster = cluster.includes(currentPiece);
         }
 
-        score += cluster.length * 10;
-        document.getElementById("score").textContent = `SCORE: ${score}`;
-        canSpawnNewPiece = true;
+        // Если фигура игрока не в кластере, удаляем кластер
+        if (!playerPieceInCluster) {
+          // Сначала получаем позицию центра кластера для эффектов
+          const centerX =
+            cluster.reduce((sum, piece) => sum + piece.position.x, 0) /
+            cluster.length;
+          const centerY =
+            cluster.reduce((sum, piece) => sum + piece.position.y, 0) /
+            cluster.length;
 
-        // Добавляем очки за уничтожение кластера
-        const clusterScore = Math.floor(75 + Math.random() * 51); // 75-125 очков
-        const centerX =
-          cluster.reduce((sum, piece) => sum + piece.position.x, 0) /
-          cluster.length;
-        const centerY =
-          cluster.reduce((sum, piece) => sum + piece.position.y, 0) /
-          cluster.length;
-        addScore(clusterScore, color, centerX, centerY);
+          // Затем удаляем все фигуры кластера
+          cluster.forEach((piece) => {
+            World.remove(engine.world, piece);
+            const index = pieces.indexOf(piece);
+            if (index > -1) pieces.splice(index, 1);
+          });
 
-        canSpawnNewPiece = true;
+          // Добавляем очки за уничтожение кластер
+          const clusterScore = Math.floor(400 + Math.random() * 200);
+          addScore(clusterScore, color, centerX, centerY);
+
+          // Воспроизводим звук взрыва
+          if (soundEffects.value === "on") {
+            explosionSound.currentTime = 0;
+            explosionSound.play();
+          }
+
+          // Создаем эффект взрыва
+          createExplosion(centerX, centerY, color);
+        }
       }
     }
   }
+
+  isCheckingLines = false;
+  checkGameOver();
+}
+
+// Проверяет, соединены ли две фигуры (учитывает форму и размер)
+function arePiecesConnected(pieceA, pieceB) {
+  // Используем встроенные bounds от Matter.js
+  const boundsA = pieceA.bounds;
+  const boundsB = pieceB.bounds;
+
+  // Расстояние между центрами
+  const dx = pieceA.position.x - pieceB.position.x;
+  const dy = pieceA.position.y - pieceB.position.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // Определяем примерный размер каждой фигуры
+  const sizeA = Math.max(
+    boundsA.max.x - boundsA.min.x,
+    boundsA.max.y - boundsA.min.y
+  );
+  const sizeB = Math.max(
+    boundsB.max.x - boundsB.min.x,
+    boundsB.max.y - boundsB.min.y
+  );
+
+  // Фигуры считаются соединенными, если расстояние между их границами меньше порога
+  const connectionThreshold = 5; // пикселей
+  return distance < (sizeA + sizeB) / 2 + connectionThreshold;
 }
 
 // Вспомогательная функция для расчета расстояния между фигурами
 function getDistance(pieceA, pieceB) {
-  // Для кругов используем радиус
-  if (pieceA.circleRadius && pieceB.circleRadius) {
-    const dx = pieceA.position.x - pieceB.position.x;
-    const dy = pieceA.position.y - pieceB.position.y;
-    return (
-      Math.sqrt(dx * dx + dy * dy) - pieceA.circleRadius - pieceB.circleRadius
-    );
-  }
-
-  // Для других фигур используем примерный размер
-  const sizeA = pieceA.width || pieceA.circleRadius || 40;
-  const sizeB = pieceB.width || pieceB.circleRadius || 40;
   const dx = pieceA.position.x - pieceB.position.x;
   const dy = pieceA.position.y - pieceB.position.y;
-  return Math.sqrt(dx * dx + dy * dy) - sizeA / 2 - sizeB / 2;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 // Проверка завершения игры
 function checkGameOver() {
-  pieces.forEach((piece) => {
-    if (piece.position.y < gameHeight * 0.2) {
-      endGame();
-    }
-  });
-}
+  if (!gameActive) return;
 
-// Проверка завершения игры
-function checkGameOver() {
-  pieces.forEach((piece) => {
+  // Проверяем только статичные фигуры (исключая текущую падающую фигуру)
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i];
+    // Игнорируем текущую падающую фигуру
+    if (piece === currentPiece) continue;
+
+    // Проверяем, достигла ли фигура линии проигрыша
     if (piece.position.y < gameHeight * 0.2) {
       endGame();
+      break;
     }
-  });
+  }
 }
 
 // Завершение игры
@@ -508,6 +672,7 @@ function restartGame() {
   // Сбрасываем счет
   score = 0;
   displayedScore = 0;
+  unlockedColors = 3;
   document.getElementById("score").textContent = `SCORE: ${score}`;
 
   // Скрываем сообщения
@@ -516,14 +681,11 @@ function restartGame() {
 
   // Запускаем игру
   gameActive = true;
-  gamePaused = false;
   currentPiece = null;
   canSpawnNewPiece = true;
-  pausedVelocities = new WeakMap();
 
   // Обновляем настройки
   initColors();
-  initPieceSize();
 
   // Перезапускаем интервалы
   clearInterval(pieceInterval);
@@ -536,41 +698,9 @@ function restartGame() {
   checkLinesInterval = setInterval(checkLines, 100);
 }
 
-// Пауза игры
-function togglePause() {
-  gamePaused = !gamePaused;
-  pauseBtn.textContent = gamePaused ? "▶" : "⏸";
-
-  if (gamePaused) {
-    // Сохраняем текущие скорости всех фигур
-    Matter.Composite.allBodies(engine.world).forEach((body) => {
-      if (!body.isStatic) {
-        pausedVelocities.set(body, {
-          velocity: { ...body.velocity },
-          angularVelocity: body.angularVelocity,
-        });
-        Body.setVelocity(body, { x: 0, y: 0 });
-        Body.setAngularVelocity(body, 0);
-      }
-    });
-    Matter.Engine.clear(engine);
-  } else {
-    // Восстанавливаем скорости всех фигур
-    Matter.Composite.allBodies(engine.world).forEach((body) => {
-      if (!body.isStatic && pausedVelocities.has(body)) {
-        const velocities = pausedVelocities.get(body);
-        Body.setVelocity(body, velocities.velocity);
-        Body.setAngularVelocity(body, velocities.angularVelocity);
-        pausedVelocities.delete(body);
-      }
-    });
-    Matter.Engine.run(engine);
-  }
-}
-
 // Управление с клавиатуры
 document.addEventListener("keydown", (e) => {
-  if (!gameActive || !currentPiece || gamePaused) return;
+  if (!gameActive || !currentPiece) return;
 
   if (e.key === "ArrowLeft") {
     Body.setVelocity(currentPiece, { x: -5, y: currentPiece.velocity.y });
@@ -580,14 +710,12 @@ document.addEventListener("keydown", (e) => {
     Body.setAngularVelocity(currentPiece, 0.05);
   } else if (e.key === "ArrowDown") {
     Body.setAngularVelocity(currentPiece, -0.05);
-  } else if (e.key === "p" || e.key === "P") {
-    togglePause();
   }
 });
 
 // Управление касанием для мобильных устройств
 gameContainer.addEventListener("touchstart", (e) => {
-  if (!gameActive || !currentPiece || gamePaused) return;
+  if (!gameActive || !currentPiece) return;
 
   touchStartX = e.touches[0].clientX;
   touchStartY = e.touches[0].clientY;
@@ -595,7 +723,7 @@ gameContainer.addEventListener("touchstart", (e) => {
 });
 
 gameContainer.addEventListener("touchmove", (e) => {
-  if (!gameActive || !currentPiece || gamePaused) return;
+  if (!gameActive || !currentPiece) return;
 
   const touchX = e.touches[0].clientX;
   const touchY = e.touches[0].clientY;
@@ -620,9 +748,10 @@ gameContainer.addEventListener("touchmove", (e) => {
 
 // Обработчик столкновений
 Events.on(engine, "collisionStart", (event) => {
-  if (!gameActive || gamePaused) return;
+  if (!gameActive || isCheckingLines) return;
 
   const pairs = event.pairs;
+  let collisionProcessed = false;
 
   for (let i = 0; i < pairs.length; i++) {
     const pair = pairs[i];
@@ -639,20 +768,30 @@ Events.on(engine, "collisionStart", (event) => {
         collisionSound.currentTime = 0;
         collisionSound.play();
       }
+      if (!collisionProcessed) {
+        // Обрабатываем только первое столкновение
+        collisionProcessed = true;
 
-      // Добавляем очки за столкновение
-      const collisionScore = Math.floor(3 + Math.random() * 5);
-      addScore(
-        collisionScore,
-        currentPiece.color,
-        currentPiece.position.x,
-        currentPiece.position.y
-      );
+        if (soundEffects.value === "on") {
+          collisionSound.currentTime = 0;
+          collisionSound.play();
+        }
 
-      currentPiece = null;
-      canSpawnNewPiece = true;
-      checkLines();
-      checkGameOver();
+        // Очки за касание: 75-125
+        const collisionScore = Math.floor(10 + Math.random() * 5);
+        addScore(
+          collisionScore,
+          currentPiece.color,
+          currentPiece.position.x,
+          currentPiece.position.y
+        );
+
+        currentPiece = null;
+
+        setTimeout(() => {
+          canSpawnNewPiece = true;
+        }, 100);
+      }
       break;
     }
   }
@@ -660,9 +799,6 @@ Events.on(engine, "collisionStart", (event) => {
 
 // Кнопка перезапуска
 restartBtn.addEventListener("click", restartGame);
-
-// Кнопка паузы
-pauseBtn.addEventListener("click", togglePause);
 
 // Кнопка настроек
 settingsBtn.addEventListener("click", () => {
@@ -672,8 +808,6 @@ settingsBtn.addEventListener("click", () => {
 // Закрытие настроек
 closeSettings.addEventListener("click", () => {
   settingsPanel.style.display = "none";
-  initColors(); // Обновляем цвета при изменении настроек
-  initPieceSize(); // Обновляем размер фигур
 });
 
 // Управление музыкой
@@ -688,7 +822,6 @@ musicToggle.addEventListener("change", () => {
 // Запуск игры
 function startGame() {
   initColors();
-  initPieceSize();
 
   if (musicToggle.value === "on") {
     bgMusic.play();
