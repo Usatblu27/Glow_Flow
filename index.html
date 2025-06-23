@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>dlm</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css">
   </head>
   <body>
     <div id="game-wrapper">
@@ -14,13 +14,10 @@
       <div id="score">SCORE: 0</div>
       <div id="game-over">GAME OVER</div>
       <div id="restart-btn">RESTART</div>
-      <div id="pause-btn">⏸</div>
       <div id="settings-btn">&#9881;</div>
       <div id="settings-panel">
         <span class="close-settings">✕</span>
-        <h2 style="color: #00ffff; text-align: center; margin-top: 0">
-          SETTINGS
-        </h2>
+        <h2 class="title">SETTINGS</h2>
         <div class="settings-option">
           <label for="music-toggle">Background Music:</label>
           <select id="music-toggle">
@@ -35,28 +32,6 @@
             <option value="off">Off</option>
           </select>
         </div>
-        <div class="settings-option">
-          <label for="colors-count">Number of Colors (3-10):</label>
-          <select id="colors-count">
-            <option value="3">3</option>
-            <option value="4" selected>4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-            <option value="8">8</option>
-            <option value="9">9</option>
-            <option value="10">10</option>
-          </select>
-        </div>
-        <div class="settings-option">
-          <label for="piece-size">Piece Size:</label>
-          <select id="piece-size">
-            <option value="small">Small</option>
-            <option value="medium" selected>Medium</option>
-            <option value="large">Large</option>
-            <option value="xlarge">Extra Large</option>
-          </select>
-        </div>
       </div>
     </div>
     <audio id="bg-music" loop>
@@ -69,6 +44,6 @@
       <source src="audio/explosion.mp3" type="audio/mpeg" />
     </audio>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
-    <script src="game.js"></script>
+    <script src="script.js"></script>
   </body>
 </html>
