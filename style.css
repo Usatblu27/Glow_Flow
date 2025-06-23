@@ -4,11 +4,10 @@ body {
   padding: 0;
   overflow: hidden;
   font-family: "Arial", sans-serif;
-  background: #0f0c29;
   background: linear-gradient(to right, #0f0c29, #302b63, #24243e);
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: top;
   height: 100vh;
   touch-action: none;
 }
@@ -75,31 +74,13 @@ body {
   background: rgba(0, 255, 255, 0.2);
 }
 
-#pause-btn {
-  position: absolute;
-  width: 50px;
-  height: 50px;
-  text-align: center;
-  line-height: 50px;
-  top: 20px;
-  right: 20px;
-  color: #00ffff;
-  font-size: 30px;
-  border: 3px solid #00ffff;
-  border-radius: 50%;
-  text-shadow: 0 0 5px #00ffff;
-  box-shadow: 0 0 10px #00ffff;
-  cursor: pointer;
-  z-index: 10;
-}
-
 #settings-btn {
   width: 50px;
   height: 50px;
   position: absolute;
   text-align: center;
   top: 20px;
-  right: 100px;
+  right: 20px;
   line-height: 50px;
   color: #00ffff;
   font-size: 40px;
@@ -212,7 +193,8 @@ body {
   }
 }
 
-canvas {
-  filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 10px currentColor)
-    drop-shadow(0 0 15px currentColor);
+.title {
+  color: #00ffff;
+  text-align: center;
+  margin-top: 0;
 }
