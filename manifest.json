@@ -1,7 +1,7 @@
 {
-  "name": "dlm",
-  "short_name": "dlm",
-  "start_url": "/dlm/",
+  "name": "Glow Flow",
+  "short_name": "Glow Flow",
+  "start_url": "/Glow_FLow/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
