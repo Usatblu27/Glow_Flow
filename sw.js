@@ -5,7 +5,7 @@ const urlsToCache = [
   '/index.html',
   '/style.css',
   '/game.js',
-  '/icon192.png'
+  '/icon-192x192.png'
 ];
 
 self.addEventListener('install', event => {
