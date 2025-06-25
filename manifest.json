@@ -1,7 +1,7 @@
 {
   "name": "Glow Flow",
   "short_name": "Glow Flow",
-  "start_url": "/Glow_FLow/",
+  "start_url": "/Glow_Flow/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
